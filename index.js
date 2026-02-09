@@ -78,10 +78,10 @@ app.post("/orders/accepted", async (req, res) => {
 
     // Return payment link
     return res.json({
-      status: "payment_created",
-      orderId,
-      payment_url: waveData.checkout_url
-    });
+  status: "payment_created",
+  orderId,
+  payment_url: waveData.url
+});
 
   } catch (error) {
     console.error("❌ Wave error", error);
