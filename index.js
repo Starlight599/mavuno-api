@@ -121,6 +121,18 @@ return res.json({
 });
 
 /**
+ * WAVE PAYMENT WEBHOOK
+ * Called by Wave when payment status changes
+ */
+app.post("/webhooks/wave", express.json(), (req, res) => {
+  console.log("🔔 Wave webhook received");
+  console.log(JSON.stringify(req.body, null, 2));
+
+  // Always acknowledge receipt
+  res.sendStatus(200);
+});
+
+/**
  * START SERVER (ALWAYS LAST)
  */
 app.listen(PORT, () => {
