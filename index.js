@@ -87,18 +87,28 @@ console.log("💳 Wave payment created", {
 
     // Return payment link
 // Send SMS with Wave payment link
-await twilioClient.messages.create({
-  body: `Kafe Zola: Your order ${orderId} is ready for payment.\nPay here: ${waveData.wave_launch_url}`,
-  from: process.env.TWILIO_FROM_NUMBER,
-  to: phone
-});
+let smsSent = false;
+
+try {
+  await twilioClient.messages.create({
+    body: `Kafe Zola: Your order ${orderId} is ready for payment.\nPay here: ${waveData.wave_launch_url}`,
+    from: process.env.TWILIO_FROM_NUMBER,
+    to: phone
+  });
+
+  smsSent = true;
+  console.log("📩 SMS sent to", phone);
+
+} catch (smsError) {
+  console.error("❌ SMS failed", smsError.message);
+}
 
 // Respond back
 return res.json({
   status: "payment_created",
   orderId,
   payment_url: waveData.wave_launch_url,
-  sms_sent: true
+  sms_sent: smsSent
 });
 
   } catch (error) {
