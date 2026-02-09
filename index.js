@@ -66,7 +66,7 @@ app.post("/orders/accepted", async (req, res) => {
 
     const waveData = await waveResponse.json();
 
-    console.log("💳 Wave response", waveData);
+    console.log("💳 Wave RAW response:\n", JSON.stringify(waveData, null, 2));
 
     // Handle Wave validation errors cleanly
     if (!waveResponse.ok) {
@@ -80,7 +80,7 @@ app.post("/orders/accepted", async (req, res) => {
     return res.json({
   status: "payment_created",
   orderId,
-  payment_url: waveData.url
+  wave: waveData
 });
 
   } catch (error) {
