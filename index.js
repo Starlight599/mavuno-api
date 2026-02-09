@@ -1,6 +1,6 @@
 const express = require("express");
 
-// Node 18+ has fetch built-in, no extra install needed
+// Node 18+ has fetch built-in (DigitalOcean App Platform supports this)
 const app = express();
 const PORT = process.env.PORT || 8080;
 
@@ -9,7 +9,7 @@ app.use(express.json());
 
 /**
  * ROOT ENDPOINT
- * Used to confirm the app is running
+ * Confirms the API is running
  */
 app.get("/", (req, res) => {
   res.send("🚀 Mavuno API is running");
@@ -17,7 +17,7 @@ app.get("/", (req, res) => {
 
 /**
  * HEALTH CHECK
- * Used by DigitalOcean and you
+ * Used by DigitalOcean + manual checks
  */
 app.get("/health", (req, res) => {
   res.json({
@@ -29,7 +29,8 @@ app.get("/health", (req, res) => {
 
 /**
  * ORDER ACCEPTED ENDPOINT
- * Triggered when an order is accepted in GloriaFood
+ * Called after a GloriaFood order is ACCEPTED
+ * Automatically creates a Wave payment link
  */
 app.post("/orders/accepted", async (req, res) => {
   const { orderId, amount, phone } = req.body;
@@ -44,7 +45,7 @@ app.post("/orders/accepted", async (req, res) => {
   }
 
   try {
-    // Create Wave payment session
+    // Create Wave checkout session (Merchant / Business API)
     const waveResponse = await fetch(
       "https://api.wave.com/v1/checkout/sessions",
       {
@@ -56,18 +57,18 @@ app.post("/orders/accepted", async (req, res) => {
         body: JSON.stringify({
           amount: amount,
           currency: "GMD",
-          description: `Order ${orderId}`,
           client_reference: orderId,
-          redirect_url: "https://your-site.com/payment-success",
-          error_redirect_url: "https://your-site.com/payment-failed"
+          success_url: "https://your-site.com/payment-success",
+          error_url: "https://your-site.com/payment-failed"
         })
       }
     );
 
     const waveData = await waveResponse.json();
 
-    console.log("💳 Wave payment created", waveData);
+    console.log("💳 Wave response", waveData);
 
+    // Handle Wave validation errors cleanly
     if (!waveResponse.ok) {
       return res.status(500).json({
         error: "Wave payment creation failed",
@@ -75,7 +76,7 @@ app.post("/orders/accepted", async (req, res) => {
       });
     }
 
-    // Respond back with payment link
+    // Return payment link
     return res.json({
       status: "payment_created",
       orderId,
