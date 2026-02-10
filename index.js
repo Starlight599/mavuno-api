@@ -20,46 +20,48 @@ app.post(
   "/webhooks/wave",
   express.raw({ type: "application/json" }),
   async (req, res) => {
-    try {
-      const signatureHeader = req.headers["wave-signature"];
+    const signatureHeader = req.headers["wave-signature"];
 
-      if (!signatureHeader) {
-        console.error("❌ Missing Wave signature header");
-        return res.sendStatus(401);
-      }
+    if (!signatureHeader) {
+      console.error("❌ Missing Wave signature header");
+      return res.sendStatus(401);
+    }
 
-      // Expected format: t=TIMESTAMP,v1=HEX_SIGNATURE
-      const parts = Object.fromEntries(
-        signatureHeader.split(",").map(p => p.split("="))
-      );
+    // Parse header: t=...,v1=...
+    const parts = Object.fromEntries(
+      signatureHeader.split(",").map(p => p.split("="))
+    );
 
-      const timestamp = parts.t;
-      const receivedSignature = parts.v1;
+    const timestamp = parts.t;
+    const receivedSignature = parts.v1;
 
-      if (!timestamp || !receivedSignature) {
-        console.error("❌ Invalid Wave signature format");
-        return res.sendStatus(401);
-      }
+    if (!timestamp || !receivedSignature) {
+      console.error("❌ Invalid Wave signature format");
+      return res.sendStatus(401);
+    }
 
-      // Wave signs: `${timestamp}.${rawBody}`
-      const payload = `${timestamp}.${req.body.toString()}`;
+    // ✅ CORRECT PAYLOAD (NO "t=")
+    const payload = `${timestamp}.${req.body.toString()}`;
 
-      const expectedSignature = crypto
-        .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
-        .update(payload)
-        .digest("hex");
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
+      .update(payload)
+      .digest("hex");
 
-      const isValid =
-        receivedSignature.length === expectedSignature.length &&
-        crypto.timingSafeEqual(
-          Buffer.from(receivedSignature, "hex"),
-          Buffer.from(expectedSignature, "hex")
-        );
+    if (expectedSignature !== receivedSignature) {
+      console.error("❌ Invalid Wave signature");
+      return res.sendStatus(401);
+    }
 
-      if (!isValid) {
-        console.error("❌ Invalid Wave signature");
-        return res.sendStatus(401);
-      }
+    // ✅ VERIFIED
+    const event = JSON.parse(req.body.toString());
+
+    console.log("🔐 Wave webhook VERIFIED");
+    console.log(JSON.stringify(event, null, 2));
+
+    res.sendStatus(200);
+  }
+);
 
       // ✅ VERIFIED
       const event = JSON.parse(req.body.toString());
