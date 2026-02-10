@@ -29,9 +29,7 @@ app.post(
         return res.sendStatus(401);
       }
 
-      // Split header: t=...,v1=...,v1=...
       const parts = signatureHeader.split(",");
-
       const timestampPart = parts.find(p => p.startsWith("t="));
       const signatureParts = parts.filter(p => p.startsWith("v1="));
 
@@ -51,7 +49,6 @@ app.post(
         .update(signedPayload)
         .digest("hex");
 
-      // Check against ALL v1 signatures
       const isValid = signatureParts.some(sig => {
         const received = sig.split("=")[1];
         return crypto.timingSafeEqual(
@@ -65,15 +62,11 @@ app.post(
         return res.sendStatus(401);
       }
 
-      // ✅ VERIFIED
       const event = JSON.parse(rawBody);
 
       console.log("🔐 Wave webhook VERIFIED");
       console.log(JSON.stringify(event, null, 2));
 
-      /* =========================
-         PAYMENT CONFIRMATION
-      ========================= */
       if (
         (event.type === "checkout.session.completed" ||
          event.type === "merchant.payment_received") &&
@@ -148,8 +141,14 @@ app.post("/orders/accepted", async (req, res) => {
 
     const waveData = await waveResponse.json();
 
+    // ✅ FIX: Resolve payment URL safely
+    const paymentUrl =
+      waveData.wave_launch_url ||
+      waveData.url ||
+      waveData.checkout_url;
+
     await twilioClient.messages.create({
-      body: `Kafe Zola: Pay for order ${orderId}\n${waveData.wave_launch_url}`,
+      body: `Kafe Zola: Pay for order ${orderId}\n${paymentUrl}`,
       from: process.env.TWILIO_FROM_NUMBER,
       to: phone
     });
