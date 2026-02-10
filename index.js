@@ -24,22 +24,25 @@ app.post(
   "/webhooks/wave",
   express.raw({ type: "application/json" }),
   async (req, res) => {
-    const signature = req.headers["wave-signature"];
+    const signatureHeader = req.headers["wave-signature"];
 
-    if (!signature) {
-      console.error("❌ Missing Wave signature header");
-      return res.sendStatus(401);
-    }
+if (!signatureHeader) {
+  console.error("❌ Missing Wave signature header");
+  return res.sendStatus(401);
+}
 
-    const expectedSignature = crypto
+// Wave sends: v1=BASE64_SIGNATURE
+const signature = signatureHeader.replace("v1=", "");
+
+const expectedSignature = crypto
   .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
   .update(req.body)
   .digest("base64");
 
-    if (signature !== expectedSignature) {
-      console.error("❌ Invalid Wave signature");
-      return res.sendStatus(401);
-    }
+if (signature !== expectedSignature) {
+  console.error("❌ Invalid Wave signature");
+  return res.sendStatus(401);
+}
 
     // ✅ Signature verified
     const event = JSON.parse(req.body.toString());
