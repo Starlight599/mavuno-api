@@ -121,16 +121,24 @@ return res.json({
 });
 
 /**
- * WAVE PAYMENT WEBHOOK
- * Called by Wave when payment status changes
+ * WAVE PAYMENT WEBHOOK (RAW BODY – STEP 5A-3.1)
  */
-app.post("/webhooks/wave", express.json(), (req, res) => {
-  console.log("🔔 Wave webhook received");
-  console.log(JSON.stringify(req.body, null, 2));
+app.post(
+  "/webhooks/wave",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    console.log("🔔 Wave webhook received (raw)");
 
-  // Always acknowledge receipt
-  res.sendStatus(200);
-});
+    // Log raw body length (safe debug)
+    console.log("Raw body length:", req.body.length);
+
+    // TEMP: parse to JSON just for visibility
+    const event = JSON.parse(req.body.toString());
+    console.log(JSON.stringify(event, null, 2));
+
+    res.sendStatus(200);
+  }
+);
 
 /**
  * START SERVER (ALWAYS LAST)
