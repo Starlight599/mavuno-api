@@ -13,6 +13,12 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
+/* ================================
+   🔁 IDEMPOTENCY GUARD (REQUIRED)
+   Prevents Wave retry / loop
+================================ */
+const processedOrders = new Set();
+
 /* =====================================================
    🔐 WAVE WEBHOOK — OFFICIAL VERIFIED IMPLEMENTATION
    MUST BE FIRST — NO express.json() BEFORE THIS
@@ -80,6 +86,19 @@ app.post(
         const orderId = event.data.client_reference;
         const amount = event.data.amount;
 
+        if (!orderId) {
+          console.warn("⚠️ No client_reference — skipping");
+          return res.sendStatus(200);
+        }
+
+        // 🔁 STOP DUPLICATE PROCESSING
+        if (processedOrders.has(orderId)) {
+          console.log(`🔁 Duplicate webhook ignored for order ${orderId}`);
+          return res.sendStatus(200);
+        }
+
+        processedOrders.add(orderId);
+
         console.log(`✅ PAYMENT CONFIRMED: ${orderId}`);
 
         await twilioClient.messages.create({
@@ -146,7 +165,7 @@ app.post("/orders/accepted", async (req, res) => {
 
     const waveData = await waveResponse.json();
 
-    // ✅ FIX: SAFE payment URL resolution (no more "undefined")
+    // ✅ SAFE payment URL resolution (matches Wave responses)
     const paymentUrl =
       waveData.wave_launch_url ||
       waveData.checkout_url ||
