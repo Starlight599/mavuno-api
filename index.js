@@ -18,7 +18,7 @@ const twilioClient = twilio(
 // 🔐 WAVE WEBHOOK (MUST BE FIRST)
 // ================================
 /**
- * WAVE PAYMENT WEBHOOK (SIGNED – STEP 5B)
+ * WAVE PAYMENT WEBHOOK (SIGNED – STEP 5B FINAL)
  */
 app.post(
   "/webhooks/wave",
@@ -26,23 +26,40 @@ app.post(
   async (req, res) => {
     const signatureHeader = req.headers["wave-signature"];
 
-if (!signatureHeader) {
-  console.error("❌ Missing Wave signature header");
-  return res.sendStatus(401);
-}
+    if (!signatureHeader) {
+      console.error("❌ Missing Wave signature header");
+      return res.sendStatus(401);
+    }
 
-// Wave sends: v1=BASE64_SIGNATURE
-const signature = signatureHeader.replace("v1=", "");
+    // Wave sends: v1=SIGNATURE
+    const receivedSignature = signatureHeader
+      .replace("v1=", "")
+      .trim();
 
-const expectedSignature = crypto
-  .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
-  .update(req.body)
-  .digest("base64");
+    // Compute expected signature
+    let expectedSignature = crypto
+      .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET.trim())
+      .update(req.body)
+      .digest("base64");
 
-if (signature !== expectedSignature) {
-  console.error("❌ Invalid Wave signature");
-  return res.sendStatus(401);
-}
+    // Normalize Base64 → Base64URL (Wave-safe)
+    expectedSignature = expectedSignature
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+    // Timing-safe comparison
+    const isValid =
+      receivedSignature.length === expectedSignature.length &&
+      crypto.timingSafeEqual(
+        Buffer.from(receivedSignature),
+        Buffer.from(expectedSignature)
+      );
+
+    if (!isValid) {
+      console.error("❌ Invalid Wave signature");
+      return res.sendStatus(401);
+    }
 
     // ✅ Signature verified
     const event = JSON.parse(req.body.toString());
@@ -66,7 +83,6 @@ if (signature !== expectedSignature) {
 
       console.log(`✅ PAYMENT CONFIRMED for order ${orderId}`);
 
-      // Send SMS to YOU
       try {
         await twilioClient.messages.create({
           body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}\nYou may now enter this order into Loyverse.`,
