@@ -7,7 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 // ================================
-// 📩 TWILIO CLIENT (MUST BE EARLY)
+// 📩 TWILIO CLIENT
 // ================================
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
@@ -15,96 +15,34 @@ const twilioClient = twilio(
 );
 
 // ================================
-// 🔐 WAVE WEBHOOK (MUST BE FIRST)
+// 🔐 WAVE WEBHOOK (TEMP – INSPECTION MODE)
+// MUST BE BEFORE express.json()
 // ================================
-/**
- * WAVE PAYMENT WEBHOOK (SIGNED – STEP 5B FINAL)
- */
 app.post(
   "/webhooks/wave",
   express.raw({ type: "application/json" }),
   async (req, res) => {
     const signatureHeader = req.headers["wave-signature"];
 
+    console.log("🔍 Wave-Signature header:", signatureHeader);
+
     if (!signatureHeader) {
       console.error("❌ Missing Wave signature header");
       return res.sendStatus(401);
     }
 
-    // Wave sends: v1=SIGNATURE
-    const receivedSignature = signatureHeader
-      .replace("v1=", "")
-      .trim();
-
-    // Compute expected signature
-    let expectedSignature = crypto
-      .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET.trim())
-      .update(req.body)
-      .digest("base64");
-
-    // Normalize Base64 → Base64URL (Wave-safe)
-    expectedSignature = expectedSignature
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "");
-
-    // Timing-safe comparison
-    const isValid =
-      receivedSignature.length === expectedSignature.length &&
-      crypto.timingSafeEqual(
-        Buffer.from(receivedSignature),
-        Buffer.from(expectedSignature)
-      );
-
-    if (!isValid) {
-      console.error("❌ Invalid Wave signature");
-      return res.sendStatus(401);
-    }
-
-    // ✅ Signature verified
+    // TEMP: accept webhook to inspect payload + signature format
     const event = JSON.parse(req.body.toString());
 
-    console.log("🔐 Wave webhook VERIFIED");
+    console.log("🧪 TEMP webhook payload accepted");
     console.log(JSON.stringify(event, null, 2));
-
-    // =========================
-    // STEP 5B — PAYMENT LOGIC
-    // =========================
-    const eventType = event.type;
-    const data = event.data?.object;
-
-    if (
-      (eventType === "checkout.session.completed" ||
-        eventType === "merchant.payment_received") &&
-      data?.payment_status === "paid"
-    ) {
-      const orderId = data.client_reference;
-      const amount = data.amount;
-
-      console.log(`✅ PAYMENT CONFIRMED for order ${orderId}`);
-
-      try {
-        await twilioClient.messages.create({
-          body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}\nYou may now enter this order into Loyverse.`,
-          from: process.env.TWILIO_FROM_NUMBER,
-          to: process.env.OWNER_PHONE_NUMBER
-        });
-
-        console.log("📩 Payment confirmation SMS sent to owner");
-      } catch (smsError) {
-        console.error(
-          "❌ Failed to send payment confirmation SMS",
-          smsError.message
-        );
-      }
-    }
 
     res.sendStatus(200);
   }
 );
 
 // ================================
-// 🔧 GLOBAL MIDDLEWARE (AFTER WEBHOOK)
+// 🔧 GLOBAL JSON MIDDLEWARE
 // ================================
 app.use(express.json());
 
