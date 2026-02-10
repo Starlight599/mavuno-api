@@ -26,22 +26,40 @@ app.post(
   async (req, res) => {
     const signatureHeader = req.headers["wave-signature"];
 
-console.log("🔍 Raw Wave-Signature header:", signatureHeader);
-console.log("🔍 Raw body (hex):", req.body.toString("hex"));
+    if (!signatureHeader) {
+      console.error("❌ Missing Wave signature header");
+      return res.sendStatus(401);
+    }
 
-if (!signatureHeader) {
-  console.error("❌ Missing Wave signature header");
-  return res.sendStatus(401);
-}
+    // Wave sends: v1=SIGNATURE
+    const receivedSignature = signatureHeader
+      .replace("v1=", "")
+      .trim();
 
-// TEMP: skip verification for inspection
-const event = JSON.parse(req.body.toString());
+    // Compute expected signature
+    let expectedSignature = crypto
+      .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET.trim())
+      .update(req.body)
+      .digest("base64");
 
-console.log("🧪 TEMP: webhook payload accepted for inspection");
-console.log(JSON.stringify(event, null, 2));
+    // Normalize Base64 → Base64URL (Wave-safe)
+    expectedSignature = expectedSignature
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
 
-res.sendStatus(200);
+    // Timing-safe comparison
+    const isValid =
+      receivedSignature.length === expectedSignature.length &&
+      crypto.timingSafeEqual(
+        Buffer.from(receivedSignature),
+        Buffer.from(expectedSignature)
+      );
 
+    if (!isValid) {
+      console.error("❌ Invalid Wave signature");
+      return res.sendStatus(401);
+    }
 
     // ✅ Signature verified
     const event = JSON.parse(req.body.toString());
