@@ -29,6 +29,7 @@ app.post(
         return res.sendStatus(401);
       }
 
+      // Split: t=...,v1=...,v1=...
       const parts = signatureHeader.split(",");
       const timestampPart = parts.find(p => p.startsWith("t="));
       const signatureParts = parts.filter(p => p.startsWith("v1="));
@@ -41,7 +42,7 @@ app.post(
       const timestamp = timestampPart.split("=")[1];
       const rawBody = req.body.toString();
 
-      // EXACT payload per Wave docs
+      // ✅ EXACT per Wave docs: timestamp + raw body
       const signedPayload = timestamp + rawBody;
 
       const expectedSignature = crypto
@@ -62,11 +63,15 @@ app.post(
         return res.sendStatus(401);
       }
 
+      // ✅ VERIFIED — safe to parse JSON now
       const event = JSON.parse(rawBody);
 
       console.log("🔐 Wave webhook VERIFIED");
       console.log(JSON.stringify(event, null, 2));
 
+      /* =========================
+         PAYMENT CONFIRMATION
+      ========================= */
       if (
         (event.type === "checkout.session.completed" ||
          event.type === "merchant.payment_received") &&
@@ -141,11 +146,16 @@ app.post("/orders/accepted", async (req, res) => {
 
     const waveData = await waveResponse.json();
 
-    // ✅ FIX: Resolve payment URL safely
+    // ✅ FIX: SAFE payment URL resolution (no more "undefined")
     const paymentUrl =
       waveData.wave_launch_url ||
-      waveData.url ||
-      waveData.checkout_url;
+      waveData.checkout_url ||
+      waveData.url;
+
+    if (!paymentUrl) {
+      console.error("❌ No payment URL returned from Wave", waveData);
+      return res.status(500).json({ error: "No payment URL from Wave" });
+    }
 
     await twilioClient.messages.create({
       body: `Kafe Zola: Pay for order ${orderId}\n${paymentUrl}`,
@@ -153,11 +163,11 @@ app.post("/orders/accepted", async (req, res) => {
       to: phone
     });
 
-    res.json({ status: "payment_created" });
+    return res.json({ status: "payment_created" });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
+    console.error("❌ Order accepted error", err);
+    return res.status(500).json({ error: "Server error" });
   }
 });
 
