@@ -14,54 +14,45 @@ const twilioClient = twilio(
 );
 
 // ======================================================
-// 🔐 WAVE WEBHOOK — SIGNED & CORRECT (MUST BE FIRST)
+// 🔐 WAVE WEBHOOK — SIGNED (MUST BE FIRST, RAW BODY)
 // ======================================================
 app.post(
   "/webhooks/wave",
   express.raw({ type: "application/json" }),
   async (req, res) => {
-    const signatureHeader = req.headers["wave-signature"];
+    try {
+      const signatureHeader = req.headers["wave-signature"];
 
-    if (!signatureHeader) {
-      console.error("❌ Missing Wave signature header");
-      return res.sendStatus(401);
-    }
+      if (!signatureHeader) {
+        console.error("❌ Missing Wave signature header");
+        return res.sendStatus(401);
+      }
 
-    // Parse header: t=...,v1=...
-    const parts = Object.fromEntries(
-      signatureHeader.split(",").map(p => p.split("="))
-    );
+      // Parse header: t=...,v1=...
+      const parts = Object.fromEntries(
+        signatureHeader.split(",").map(p => p.split("="))
+      );
 
-    const timestamp = parts.t;
-    const receivedSignature = parts.v1;
+      const timestamp = parts.t;
+      const receivedSignature = parts.v1;
 
-    if (!timestamp || !receivedSignature) {
-      console.error("❌ Invalid Wave signature format");
-      return res.sendStatus(401);
-    }
+      if (!timestamp || !receivedSignature) {
+        console.error("❌ Invalid Wave signature format");
+        return res.sendStatus(401);
+      }
 
-    // ✅ CORRECT PAYLOAD (NO "t=")
-    const payload = `${timestamp}.${req.body.toString()}`;
+      // Wave signs: `${timestamp}.${rawBody}`
+      const payload = `${timestamp}.${req.body.toString()}`;
 
-    const expectedSignature = crypto
-      .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
-      .update(payload)
-      .digest("hex");
+      const expectedSignature = crypto
+        .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
+        .update(payload)
+        .digest("hex");
 
-    if (expectedSignature !== receivedSignature) {
-      console.error("❌ Invalid Wave signature");
-      return res.sendStatus(401);
-    }
-
-    // ✅ VERIFIED
-    const event = JSON.parse(req.body.toString());
-
-    console.log("🔐 Wave webhook VERIFIED");
-    console.log(JSON.stringify(event, null, 2));
-
-    res.sendStatus(200);
-  }
-);
+      if (expectedSignature !== receivedSignature) {
+        console.error("❌ Invalid Wave signature");
+        return res.sendStatus(401);
+      }
 
       // ✅ VERIFIED
       const event = JSON.parse(req.body.toString());
@@ -77,7 +68,7 @@ app.post(
 
       if (
         (eventType === "checkout.session.completed" ||
-         eventType === "merchant.payment_received") &&
+          eventType === "merchant.payment_received") &&
         data?.payment_status === "paid"
       ) {
         const orderId = data.client_reference;
