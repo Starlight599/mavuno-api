@@ -19,11 +19,11 @@ const twilioClient = twilio(
 app.post(
   "/webhooks/wave",
   express.raw({ type: "application/json" }),
-  async (req, res) => {
+  (req, res) => {
     const signatureHeader = req.headers["wave-signature"];
 
     if (!signatureHeader) {
-      console.error("❌ Missing Wave signature header");
+      console.error("❌ Missing Wave-Signature header");
       return res.sendStatus(401);
     }
 
@@ -36,11 +36,11 @@ app.post(
     const receivedSignature = parts.v1;
 
     if (!timestamp || !receivedSignature) {
-      console.error("❌ Invalid Wave signature format");
+      console.error("❌ Invalid Wave-Signature format");
       return res.sendStatus(401);
     }
 
-    // ✅ CORRECT PAYLOAD (NO t= PREFIX)
+    // 🔐 THIS is the exact payload Wave signs
     const payload = `${timestamp}.${req.body.toString()}`;
 
     const expectedSignature = crypto
@@ -48,18 +48,23 @@ app.post(
       .update(payload)
       .digest("hex");
 
-    // Timing-safe compare
-    const isValid =
-      receivedSignature.length === expectedSignature.length &&
-      crypto.timingSafeEqual(
-        Buffer.from(receivedSignature, "hex"),
-        Buffer.from(expectedSignature, "hex")
-      );
-
-    if (!isValid) {
+    if (!crypto.timingSafeEqual(
+      Buffer.from(receivedSignature, "hex"),
+      Buffer.from(expectedSignature, "hex")
+    )) {
       console.error("❌ Invalid Wave signature");
       return res.sendStatus(401);
     }
+
+    // ✅ VERIFIED
+    const event = JSON.parse(req.body.toString());
+
+    console.log("🔐 Wave webhook VERIFIED");
+    console.log(JSON.stringify(event, null, 2));
+
+    res.sendStatus(200);
+  }
+);
 
     // ✅ VERIFIED
     const event = JSON.parse(req.body.toString());
