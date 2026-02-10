@@ -7,16 +7,23 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 // ================================
+// 📩 TWILIO CLIENT (MUST BE EARLY)
+// ================================
+const twilioClient = twilio(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+);
+
+// ================================
 // 🔐 WAVE WEBHOOK (MUST BE FIRST)
 // ================================
 /**
- * WAVE PAYMENT WEBHOOK (SIGNED – FIXED)
- * IMPORTANT: This route MUST come before express.json()
+ * WAVE PAYMENT WEBHOOK (SIGNED – STEP 5B)
  */
 app.post(
   "/webhooks/wave",
   express.raw({ type: "application/json" }),
-  (req, res) => {
+  async (req, res) => {
     const signature = req.headers["wave-signature"];
 
     if (!signature) {
@@ -34,11 +41,44 @@ app.post(
       return res.sendStatus(401);
     }
 
-    // Signature verified — safe to parse
+    // ✅ Signature verified
     const event = JSON.parse(req.body.toString());
 
     console.log("🔐 Wave webhook VERIFIED");
     console.log(JSON.stringify(event, null, 2));
+
+    // =========================
+    // STEP 5B — PAYMENT LOGIC
+    // =========================
+    const eventType = event.type;
+    const data = event.data?.object;
+
+    if (
+      (eventType === "checkout.session.completed" ||
+        eventType === "merchant.payment_received") &&
+      data?.payment_status === "paid"
+    ) {
+      const orderId = data.client_reference;
+      const amount = data.amount;
+
+      console.log(`✅ PAYMENT CONFIRMED for order ${orderId}`);
+
+      // Send SMS to YOU
+      try {
+        await twilioClient.messages.create({
+          body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}\nYou may now enter this order into Loyverse.`,
+          from: process.env.TWILIO_FROM_NUMBER,
+          to: process.env.OWNER_PHONE_NUMBER
+        });
+
+        console.log("📩 Payment confirmation SMS sent to owner");
+      } catch (smsError) {
+        console.error(
+          "❌ Failed to send payment confirmation SMS",
+          smsError.message
+        );
+      }
+    }
 
     res.sendStatus(200);
   }
@@ -48,14 +88,6 @@ app.post(
 // 🔧 GLOBAL MIDDLEWARE (AFTER WEBHOOK)
 // ================================
 app.use(express.json());
-
-// ================================
-// 📩 TWILIO CLIENT
-// ================================
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
 
 // ================================
 // ROOT ENDPOINT
@@ -90,7 +122,6 @@ app.post("/orders/accepted", async (req, res) => {
   }
 
   try {
-    // Create Wave checkout session
     const waveResponse = await fetch(
       "https://api.wave.com/v1/checkout/sessions",
       {
@@ -123,7 +154,6 @@ app.post("/orders/accepted", async (req, res) => {
       payment_url: waveData.wave_launch_url
     });
 
-    // Send SMS
     let smsSent = false;
 
     try {
