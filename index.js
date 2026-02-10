@@ -29,30 +29,28 @@ app.post(
       }
 
       // Parse header: t=...,v1=...
-      const parts = Object.fromEntries(
-        signatureHeader.split(",").map(p => p.split("="))
-      );
+const parts = Object.fromEntries(
+  signatureHeader.split(",").map(p => p.split("="))
+);
 
-      const timestamp = parts.t;
-      const receivedSignature = parts.v1;
+const timestamp = parts.t;
+const receivedSignature = parts.v1;
 
-      if (!timestamp || !receivedSignature) {
-        console.error("❌ Invalid Wave signature format");
-        return res.sendStatus(401);
-      }
+// 🚨 CORRECT: NO DOT, NO PREFIX
+const payload = timestamp + req.body.toString();
 
-      // Wave signs: `${timestamp}.${rawBody}`
-      const payload = `${timestamp}.${req.body.toString()}`;
+const expectedSignature = crypto
+  .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
+  .update(payload)
+  .digest("hex");
 
-      const expectedSignature = crypto
-        .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
-        .update(payload)
-        .digest("hex");
-
-      if (expectedSignature !== receivedSignature) {
-        console.error("❌ Invalid Wave signature");
-        return res.sendStatus(401);
-      }
+if (!crypto.timingSafeEqual(
+  Buffer.from(receivedSignature, "hex"),
+  Buffer.from(expectedSignature, "hex")
+)) {
+  console.error("❌ Invalid Wave signature");
+  return res.sendStatus(401);
+}
 
       // ✅ VERIFIED
       const event = JSON.parse(req.body.toString());
