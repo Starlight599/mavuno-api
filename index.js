@@ -14,7 +14,7 @@ const twilioClient = twilio(
 );
 
 // ================================
-// 🔐 WAVE WEBHOOK (FINAL VERIFIED)
+// 🔐 WAVE WEBHOOK (CORRECT + FINAL)
 // ================================
 app.post(
   "/webhooks/wave",
@@ -27,7 +27,7 @@ app.post(
       return res.sendStatus(401);
     }
 
-    // Parse: t=...,v1=...
+    // Parse header: t=...,v1=...
     const parts = Object.fromEntries(
       signatureHeader.split(",").map(p => p.split("="))
     );
@@ -40,15 +40,15 @@ app.post(
       return res.sendStatus(401);
     }
 
-    // Wave signs: `${timestamp}.${rawBody}`
-    const payload = `t=${timestamp}.${req.body.toString()}`;
+    // ✅ CORRECT PAYLOAD (NO t= PREFIX)
+    const payload = `${timestamp}.${req.body.toString()}`;
 
     const expectedSignature = crypto
       .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
       .update(payload)
       .digest("hex");
 
-    // Timing-safe comparison
+    // Timing-safe compare
     const isValid =
       receivedSignature.length === expectedSignature.length &&
       crypto.timingSafeEqual(
@@ -75,7 +75,7 @@ app.post(
 
     if (
       (eventType === "checkout.session.completed" ||
-        eventType === "merchant.payment_received") &&
+       eventType === "merchant.payment_received") &&
       data?.payment_status === "paid"
     ) {
       const orderId = data.client_reference;
@@ -101,7 +101,7 @@ app.post(
 );
 
 // ================================
-// GLOBAL JSON MIDDLEWARE
+// GLOBAL JSON (AFTER WEBHOOK)
 // ================================
 app.use(express.json());
 
