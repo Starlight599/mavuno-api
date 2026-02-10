@@ -1,5 +1,6 @@
 const express = require("express");
 const twilio = require("twilio");
+const crypto = require("crypto");
 
 // Node 18+ has fetch built-in (DigitalOcean App Platform supports this)
 const app = express();
@@ -121,19 +122,33 @@ return res.json({
 });
 
 /**
- * WAVE PAYMENT WEBHOOK (RAW BODY – STEP 5A-3.1)
+ * WAVE PAYMENT WEBHOOK (SIGNED – STEP 5A-3.2)
  */
 app.post(
   "/webhooks/wave",
   express.raw({ type: "application/json" }),
   (req, res) => {
-    console.log("🔔 Wave webhook received (raw)");
+    const signature = req.headers["wave-signature"];
 
-    // Log raw body length (safe debug)
-    console.log("Raw body length:", req.body.length);
+    if (!signature) {
+      console.error("❌ Missing Wave signature header");
+      return res.sendStatus(401);
+    }
 
-    // TEMP: parse to JSON just for visibility
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
+      .update(req.body)
+      .digest("hex");
+
+    if (signature !== expectedSignature) {
+      console.error("❌ Invalid Wave signature");
+      return res.sendStatus(401);
+    }
+
+    // Signature verified — safe to parse
     const event = JSON.parse(req.body.toString());
+
+    console.log("🔐 Wave webhook VERIFIED");
     console.log(JSON.stringify(event, null, 2));
 
     res.sendStatus(200);
