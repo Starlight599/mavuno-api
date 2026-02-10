@@ -41,7 +41,7 @@ app.post(
     }
 
     // Wave signs: `${timestamp}.${rawBody}`
-    const payload = `${timestamp}.${req.body.toString()}`;
+    const payload = `t=${timestamp}.${req.body.toString()}`;
 
     const expectedSignature = crypto
       .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
