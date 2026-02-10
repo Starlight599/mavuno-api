@@ -1,21 +1,22 @@
 const express = require("express");
-const twilio = require("twilio");
 const crypto = require("crypto");
+const twilio = require("twilio");
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// ================================
-// 📩 TWILIO CLIENT
-// ================================
+/* ================================
+   📩 TWILIO CLIENT
+================================ */
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
-// ======================================================
-// 🔐 WAVE WEBHOOK — SIGNED (MUST BE FIRST, RAW BODY)
-// ======================================================
+/* =====================================================
+   🔐 WAVE WEBHOOK — OFFICIAL VERIFIED IMPLEMENTATION
+   MUST BE FIRST — NO express.json() BEFORE THIS
+===================================================== */
 app.post(
   "/webhooks/wave",
   express.raw({ type: "application/json" }),
@@ -24,67 +25,70 @@ app.post(
       const signatureHeader = req.headers["wave-signature"];
 
       if (!signatureHeader) {
-        console.error("❌ Missing Wave signature header");
+        console.error("❌ Missing Wave-Signature header");
         return res.sendStatus(401);
       }
 
-      // Parse header: t=...,v1=...
-const parts = Object.fromEntries(
-  signatureHeader.split(",").map(p => p.split("="))
-);
+      // Split header: t=...,v1=...,v1=...
+      const parts = signatureHeader.split(",");
 
-const timestamp = parts.t;
-const receivedSignature = parts.v1;
+      const timestampPart = parts.find(p => p.startsWith("t="));
+      const signatureParts = parts.filter(p => p.startsWith("v1="));
 
-// 🚨 CORRECT: NO DOT, NO PREFIX
-const payload = timestamp + req.body.toString();
+      if (!timestampPart || signatureParts.length === 0) {
+        console.error("❌ Invalid Wave-Signature format");
+        return res.sendStatus(401);
+      }
 
-const expectedSignature = crypto
-  .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
-  .update(payload)
-  .digest("hex");
+      const timestamp = timestampPart.split("=")[1];
+      const rawBody = req.body.toString();
 
-if (!crypto.timingSafeEqual(
-  Buffer.from(receivedSignature, "hex"),
-  Buffer.from(expectedSignature, "hex")
-)) {
-  console.error("❌ Invalid Wave signature");
-  return res.sendStatus(401);
-}
+      // EXACT payload per Wave docs
+      const signedPayload = timestamp + rawBody;
+
+      const expectedSignature = crypto
+        .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
+        .update(signedPayload)
+        .digest("hex");
+
+      // Check against ALL v1 signatures
+      const isValid = signatureParts.some(sig => {
+        const received = sig.split("=")[1];
+        return crypto.timingSafeEqual(
+          Buffer.from(received, "hex"),
+          Buffer.from(expectedSignature, "hex")
+        );
+      });
+
+      if (!isValid) {
+        console.error("❌ Invalid Wave signature");
+        return res.sendStatus(401);
+      }
 
       // ✅ VERIFIED
-      const event = JSON.parse(req.body.toString());
+      const event = JSON.parse(rawBody);
 
       console.log("🔐 Wave webhook VERIFIED");
       console.log(JSON.stringify(event, null, 2));
 
-      // =========================
-      // PAYMENT CONFIRMATION LOGIC
-      // =========================
-      const eventType = event.type;
-      const data = event.data?.object;
-
+      /* =========================
+         PAYMENT CONFIRMATION
+      ========================= */
       if (
-        (eventType === "checkout.session.completed" ||
-          eventType === "merchant.payment_received") &&
-        data?.payment_status === "paid"
+        (event.type === "checkout.session.completed" ||
+         event.type === "merchant.payment_received") &&
+        event.data?.payment_status === "succeeded"
       ) {
-        const orderId = data.client_reference;
-        const amount = data.amount;
+        const orderId = event.data.client_reference;
+        const amount = event.data.amount;
 
-        console.log(`✅ PAYMENT CONFIRMED for order ${orderId}`);
+        console.log(`✅ PAYMENT CONFIRMED: ${orderId}`);
 
-        try {
-          await twilioClient.messages.create({
-            body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}\nYou may now enter this order into Loyverse.`,
-            from: process.env.TWILIO_FROM_NUMBER,
-            to: process.env.OWNER_PHONE_NUMBER
-          });
-
-          console.log("📩 Payment confirmation SMS sent to owner");
-        } catch (smsError) {
-          console.error("❌ SMS send failed", smsError.message);
-        }
+        await twilioClient.messages.create({
+          body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}`,
+          from: process.env.TWILIO_FROM_NUMBER,
+          to: process.env.OWNER_PHONE_NUMBER
+        });
       }
 
       return res.sendStatus(200);
@@ -96,39 +100,33 @@ if (!crypto.timingSafeEqual(
   }
 );
 
-// ================================
-// 🔧 GLOBAL JSON MIDDLEWARE
-// ================================
+/* ================================
+   🔧 JSON MIDDLEWARE (AFTER WEBHOOK)
+================================ */
 app.use(express.json());
 
-// ================================
-// ROOT
-// ================================
+/* ================================
+   ROOT
+================================ */
 app.get("/", (req, res) => {
   res.send("🚀 Mavuno API is running");
 });
 
-// ================================
-// HEALTH CHECK
-// ================================
+/* ================================
+   HEALTH CHECK
+================================ */
 app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    service: "mavuno-api",
-    time: new Date().toISOString()
-  });
+  res.json({ status: "ok" });
 });
 
-// ================================
-// ORDER ACCEPTED (GLORIAFOOD)
-// ================================
+/* ================================
+   ORDER ACCEPTED (GLORIAFOOD)
+================================ */
 app.post("/orders/accepted", async (req, res) => {
   const { orderId, amount, phone } = req.body;
 
   if (!orderId || !amount || !phone) {
-    return res.status(400).json({
-      error: "orderId, amount, and phone are required"
-    });
+    return res.status(400).json({ error: "Missing fields" });
   }
 
   try {
@@ -143,21 +141,12 @@ app.post("/orders/accepted", async (req, res) => {
         body: JSON.stringify({
           amount,
           currency: "GMD",
-          client_reference: orderId,
-          success_url: "https://your-site.com/payment-success",
-          error_url: "https://your-site.com/payment-failed"
+          client_reference: orderId
         })
       }
     );
 
     const waveData = await waveResponse.json();
-
-    if (!waveResponse.ok) {
-      return res.status(500).json({
-        error: "Wave payment creation failed",
-        details: waveData
-      });
-    }
 
     await twilioClient.messages.create({
       body: `Kafe Zola: Pay for order ${orderId}\n${waveData.wave_launch_url}`,
@@ -165,21 +154,17 @@ app.post("/orders/accepted", async (req, res) => {
       to: phone
     });
 
-    return res.json({
-      status: "payment_created",
-      orderId,
-      payment_url: waveData.wave_launch_url
-    });
+    res.json({ status: "payment_created" });
 
   } catch (err) {
-    console.error("❌ Order accepted error", err);
-    return res.status(500).json({ error: "Server error" });
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-// ================================
-// START SERVER
-// ================================
+/* ================================
+   START SERVER
+================================ */
 app.listen(PORT, () => {
   console.log(`🚀 Mavuno API listening on port ${PORT}`);
 });
