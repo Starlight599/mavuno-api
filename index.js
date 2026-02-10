@@ -32,9 +32,9 @@ app.post(
     }
 
     const expectedSignature = crypto
-      .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
-      .update(req.body)
-      .digest("hex");
+  .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
+  .update(req.body)
+  .digest("base64");
 
     if (signature !== expectedSignature) {
       console.error("❌ Invalid Wave signature");
