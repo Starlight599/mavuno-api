@@ -1,5 +1,6 @@
 const express = require("express");
 const twilio = require("twilio");
+const crypto = require("crypto");
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -13,15 +14,88 @@ const twilioClient = twilio(
 );
 
 // ================================
-// 🔐 WAVE WEBHOOK (TEMP – NO VERIFICATION)
+// 🔐 WAVE WEBHOOK (FINAL VERIFIED)
 // ================================
 app.post(
   "/webhooks/wave",
   express.raw({ type: "application/json" }),
-  (req, res) => {
-    console.log("🧪 TEMP WEBHOOK HIT");
-    console.log("Wave-Signature:", req.headers["wave-signature"]);
-    console.log("Raw body:", req.body.toString());
+  async (req, res) => {
+    const signatureHeader = req.headers["wave-signature"];
+
+    if (!signatureHeader) {
+      console.error("❌ Missing Wave signature header");
+      return res.sendStatus(401);
+    }
+
+    // Parse: t=...,v1=...
+    const parts = Object.fromEntries(
+      signatureHeader.split(",").map(p => p.split("="))
+    );
+
+    const timestamp = parts.t;
+    const receivedSignature = parts.v1;
+
+    if (!timestamp || !receivedSignature) {
+      console.error("❌ Invalid Wave signature format");
+      return res.sendStatus(401);
+    }
+
+    // Wave signs: `${timestamp}.${rawBody}`
+    const payload = `${timestamp}.${req.body.toString()}`;
+
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.WAVE_WEBHOOK_SECRET)
+      .update(payload)
+      .digest("hex");
+
+    // Timing-safe comparison
+    const isValid =
+      receivedSignature.length === expectedSignature.length &&
+      crypto.timingSafeEqual(
+        Buffer.from(receivedSignature, "hex"),
+        Buffer.from(expectedSignature, "hex")
+      );
+
+    if (!isValid) {
+      console.error("❌ Invalid Wave signature");
+      return res.sendStatus(401);
+    }
+
+    // ✅ VERIFIED
+    const event = JSON.parse(req.body.toString());
+
+    console.log("🔐 Wave webhook VERIFIED");
+    console.log(JSON.stringify(event, null, 2));
+
+    // =========================
+    // PAYMENT CONFIRMATION LOGIC
+    // =========================
+    const eventType = event.type;
+    const data = event.data?.object;
+
+    if (
+      (eventType === "checkout.session.completed" ||
+        eventType === "merchant.payment_received") &&
+      data?.payment_status === "paid"
+    ) {
+      const orderId = data.client_reference;
+      const amount = data.amount;
+
+      console.log(`✅ PAYMENT CONFIRMED for order ${orderId}`);
+
+      try {
+        await twilioClient.messages.create({
+          body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}\nYou may now enter this order into Loyverse.`,
+          from: process.env.TWILIO_FROM_NUMBER,
+          to: process.env.OWNER_PHONE_NUMBER
+        });
+
+        console.log("📩 Payment confirmation SMS sent to owner");
+      } catch (err) {
+        console.error("❌ SMS send failed", err.message);
+      }
+    }
+
     res.sendStatus(200);
   }
 );
