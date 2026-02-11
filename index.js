@@ -28,7 +28,6 @@ app.post(
         return res.sendStatus(401);
       }
 
-      // Header format: t=123,v1=abc
       const parts = signatureHeader.split(",");
       const timestamp = parts.find(p => p.startsWith("t="))?.split("=")[1];
       const receivedSignature = parts.find(p => p.startsWith("v1="))?.split("=")[1];
@@ -39,8 +38,6 @@ app.post(
       }
 
       const rawBody = req.body.toString();
-
-      // EXACT per Wave docs
       const signedPayload = timestamp + rawBody;
 
       const expectedSignature = crypto
@@ -53,12 +50,9 @@ app.post(
         return res.sendStatus(401);
       }
 
-      // VERIFIED
       const event = JSON.parse(rawBody);
       console.log("🔐 Wave webhook VERIFIED");
-      console.log(JSON.stringify(event, null, 2));
 
-      // Payment confirmation
       if (
         (event.type === "checkout.session.completed" ||
          event.type === "merchant.payment_received") &&
@@ -95,6 +89,13 @@ app.use(express.json());
 ================================ */
 app.get("/", (req, res) => {
   res.send("🚀 Mavuno API is running");
+});
+
+/* ================================
+   HEALTH CHECK (REQUIRED FOR DO)
+================================ */
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" });
 });
 
 /* ================================
