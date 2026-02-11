@@ -6,21 +6,15 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 /* ================================
-   📩 TWILIO CLIENT
+   TWILIO CLIENT
 ================================ */
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
-/* ================================
-   🔁 IDEMPOTENCY GUARD (REQUIRED)
-   Prevents Wave retry / loop
-================================ */
-const processedOrders = new Set();
-
 /* =====================================================
-   🔐 WAVE WEBHOOK — OFFICIAL VERIFIED IMPLEMENTATION
+   WAVE WEBHOOK — EXACT DOC IMPLEMENTATION
    MUST BE FIRST — NO express.json() BEFORE THIS
 ===================================================== */
 app.post(
@@ -29,26 +23,24 @@ app.post(
   async (req, res) => {
     try {
       const signatureHeader = req.headers["wave-signature"];
-
       if (!signatureHeader) {
         console.error("❌ Missing Wave-Signature header");
         return res.sendStatus(401);
       }
 
-      // Split: t=...,v1=...,v1=...
+      // Header format: t=123,v1=abc
       const parts = signatureHeader.split(",");
-      const timestampPart = parts.find(p => p.startsWith("t="));
-      const signatureParts = parts.filter(p => p.startsWith("v1="));
+      const timestamp = parts.find(p => p.startsWith("t="))?.split("=")[1];
+      const receivedSignature = parts.find(p => p.startsWith("v1="))?.split("=")[1];
 
-      if (!timestampPart || signatureParts.length === 0) {
+      if (!timestamp || !receivedSignature) {
         console.error("❌ Invalid Wave-Signature format");
         return res.sendStatus(401);
       }
 
-      const timestamp = timestampPart.split("=")[1];
       const rawBody = req.body.toString();
 
-      // ✅ EXACT per Wave docs: timestamp + raw body
+      // EXACT per Wave docs
       const signedPayload = timestamp + rawBody;
 
       const expectedSignature = crypto
@@ -56,28 +48,17 @@ app.post(
         .update(signedPayload)
         .digest("hex");
 
-      const isValid = signatureParts.some(sig => {
-        const received = sig.split("=")[1];
-        return crypto.timingSafeEqual(
-          Buffer.from(received, "hex"),
-          Buffer.from(expectedSignature, "hex")
-        );
-      });
-
-      if (!isValid) {
+      if (expectedSignature !== receivedSignature) {
         console.error("❌ Invalid Wave signature");
         return res.sendStatus(401);
       }
 
-      // ✅ VERIFIED — safe to parse JSON now
+      // VERIFIED
       const event = JSON.parse(rawBody);
-
       console.log("🔐 Wave webhook VERIFIED");
       console.log(JSON.stringify(event, null, 2));
 
-      /* =========================
-         PAYMENT CONFIRMATION
-      ========================= */
+      // Payment confirmation
       if (
         (event.type === "checkout.session.completed" ||
          event.type === "merchant.payment_received") &&
@@ -85,19 +66,6 @@ app.post(
       ) {
         const orderId = event.data.client_reference;
         const amount = event.data.amount;
-
-        if (!orderId) {
-          console.warn("⚠️ No client_reference — skipping");
-          return res.sendStatus(200);
-        }
-
-        // 🔁 STOP DUPLICATE PROCESSING
-        if (processedOrders.has(orderId)) {
-          console.log(`🔁 Duplicate webhook ignored for order ${orderId}`);
-          return res.sendStatus(200);
-        }
-
-        processedOrders.add(orderId);
 
         console.log(`✅ PAYMENT CONFIRMED: ${orderId}`);
 
@@ -111,14 +79,14 @@ app.post(
       return res.sendStatus(200);
 
     } catch (err) {
-      console.error("❌ Webhook processing error", err);
+      console.error("❌ Webhook error", err);
       return res.sendStatus(500);
     }
   }
 );
 
 /* ================================
-   🔧 JSON MIDDLEWARE (AFTER WEBHOOK)
+   JSON MIDDLEWARE (AFTER WEBHOOK)
 ================================ */
 app.use(express.json());
 
@@ -130,14 +98,7 @@ app.get("/", (req, res) => {
 });
 
 /* ================================
-   HEALTH CHECK
-================================ */
-app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
-});
-
-/* ================================
-   ORDER ACCEPTED (GLORIAFOOD)
+   ORDER ACCEPTED
 ================================ */
 app.post("/orders/accepted", async (req, res) => {
   const { orderId, amount, phone } = req.body;
@@ -156,25 +117,23 @@ app.post("/orders/accepted", async (req, res) => {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          amount,
+          amount: amount.toString(),
           currency: "GMD",
-          client_reference: orderId
+          client_reference: orderId,
+          success_url: "https://kafezola.com/payment-success",
+          error_url: "https://kafezola.com/payment-failed"
         })
       }
     );
 
     const waveData = await waveResponse.json();
 
-    // ✅ SAFE payment URL resolution (matches Wave responses)
-    const paymentUrl =
-      waveData.wave_launch_url ||
-      waveData.checkout_url ||
-      waveData.url;
-
-    if (!paymentUrl) {
-      console.error("❌ No payment URL returned from Wave", waveData);
-      return res.status(500).json({ error: "No payment URL from Wave" });
+    if (!waveResponse.ok) {
+      console.error("❌ Wave error:", waveData);
+      return res.status(500).json({ error: "Wave failed" });
     }
+
+    const paymentUrl = waveData.wave_launch_url;
 
     await twilioClient.messages.create({
       body: `Kafe Zola: Pay for order ${orderId}\n${paymentUrl}`,
@@ -185,7 +144,7 @@ app.post("/orders/accepted", async (req, res) => {
     return res.json({ status: "payment_created" });
 
   } catch (err) {
-    console.error("❌ Order accepted error", err);
+    console.error("❌ Order error", err);
     return res.status(500).json({ error: "Server error" });
   }
 });
