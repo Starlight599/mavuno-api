@@ -121,8 +121,8 @@ app.post("/orders/accepted", async (req, res) => {
           amount: amount.toString(),
           currency: "GMD",
           client_reference: orderId,
-          success_url: "https://kafezola.com/payment-success",
-          error_url: "https://kafezola.com/payment-failed"
+          success_url: "https://kafezolagambia.com/",
+          error_url: "https://kafezolagambia.com/"
         })
       }
     );
