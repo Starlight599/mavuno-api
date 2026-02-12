@@ -107,6 +107,9 @@ app.post("/gloria/accepted", async (req, res) => {
 
     console.log("📦 Gloria Order Received:", order.order_id);
 
+    // 🔍 DEBUG ORDER TYPE (SAFE — will not break anything)
+    console.log("Order type:", order.order_type);
+
     const orderId = order.order_id;
     const amount = order.total_price;
     const phone = order.customer?.phone;
