@@ -89,6 +89,9 @@ app.use(express.json());
 ===================================================== */
 app.post("/gloria/accepted", async (req, res) => {
   try {
+
+     console.log("🔎 Incoming headers:", req.headers)
+     
     const masterKey = req.headers["master-key"];
     const restaurantKey = req.headers["restaurant-key"];
     const restaurantToken = req.headers["restaurant-token"];
