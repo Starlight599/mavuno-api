@@ -90,25 +90,25 @@ app.use(express.json());
 app.post("/gloria/accepted", async (req, res) => {
   try {
 
-     console.log("🔎 Incoming headers:", req.headers)
-     
-    const authorizationHeader = req.headers["authorization"];
+    console.log("🔎 Incoming headers:", req.headers);
 
-if (!authorizationHeader) {
-  console.error("❌ Missing Gloria authorization header");
-  return res.sendStatus(401);
-}
+    const masterKey = req.headers["master-key"];
+    const restaurantKey = req.headers["restaurant-key"];
+    const restaurantToken = req.headers["restaurant-token"];
 
-if (authorizationHeader !== process.env.GLORIA_MASTER_KEY) {
-  console.error("❌ Invalid Gloria authentication");
-  return res.sendStatus(401);
-}
+    // ✅ Verify Gloria credentials
+    if (
+      masterKey !== process.env.GLORIA_MASTER_KEY ||
+      restaurantKey !== process.env.GLORIA_RESTAURANT_KEY ||
+      restaurantToken !== process.env.GLORIA_RESTAURANT_TOKEN
+    ) {
+      console.error("❌ Invalid Gloria authentication");
+      return res.sendStatus(401);
+    }
 
     const order = req.body;
 
     console.log("📦 Gloria Order Received:", order.order_id);
-
-    // 🔍 DEBUG ORDER TYPE (SAFE — will not break anything)
     console.log("Order type:", order.order_type);
 
     const orderId = order.order_id;
@@ -148,7 +148,6 @@ if (authorizationHeader !== process.env.GLORIA_MASTER_KEY) {
 
     const paymentUrl = waveData.wave_launch_url;
 
-    // Send SMS to customer
     await twilioClient.messages.create({
       body: `Kafe Zola: Pay for order ${orderId}\n${paymentUrl}`,
       from: process.env.TWILIO_FROM_NUMBER,
