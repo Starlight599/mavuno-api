@@ -92,19 +92,17 @@ app.post("/gloria/accepted", async (req, res) => {
 
      console.log("🔎 Incoming headers:", req.headers)
      
-    const masterKey = req.headers["master-key"];
-    const restaurantKey = req.headers["restaurant-key"];
-    const restaurantToken = req.headers["restaurant-token"];
+    const authorizationHeader = req.headers["authorization"];
 
-    // Verify Gloria credentials
-    if (
-      masterKey !== process.env.GLORIA_MASTER_KEY ||
-      restaurantKey !== process.env.GLORIA_RESTAURANT_KEY ||
-      restaurantToken !== process.env.GLORIA_RESTAURANT_TOKEN
-    ) {
-      console.error("❌ Invalid Gloria authentication");
-      return res.sendStatus(401);
-    }
+if (!authorizationHeader) {
+  console.error("❌ Missing Gloria authorization header");
+  return res.sendStatus(401);
+}
+
+if (authorizationHeader !== process.env.GLORIA_MASTER_KEY) {
+  console.error("❌ Invalid Gloria authentication");
+  return res.sendStatus(401);
+}
 
     const order = req.body;
 
