@@ -84,6 +84,83 @@ app.post(
 ================================ */
 app.use(express.json());
 
+/* =====================================================
+   GLORIAFOOD ACCEPTED ORDER WEBHOOK
+===================================================== */
+app.post("/gloria/accepted", async (req, res) => {
+  try {
+    const masterKey = req.headers["master-key"];
+    const restaurantKey = req.headers["restaurant-key"];
+    const restaurantToken = req.headers["restaurant-token"];
+
+    // Verify Gloria credentials
+    if (
+      masterKey !== process.env.GLORIA_MASTER_KEY ||
+      restaurantKey !== process.env.GLORIA_RESTAURANT_KEY ||
+      restaurantToken !== process.env.GLORIA_RESTAURANT_TOKEN
+    ) {
+      console.error("❌ Invalid Gloria authentication");
+      return res.sendStatus(401);
+    }
+
+    const order = req.body;
+
+    console.log("📦 Gloria Order Received:", order.order_id);
+
+    const orderId = order.order_id;
+    const amount = order.total_price;
+    const phone = order.customer?.phone;
+
+    if (!orderId || !amount || !phone) {
+      console.error("❌ Missing order data");
+      return res.sendStatus(400);
+    }
+
+    // Create Wave checkout
+    const waveResponse = await fetch(
+      "https://api.wave.com/v1/checkout/sessions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.WAVE_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          amount: amount.toString(),
+          currency: "GMD",
+          client_reference: orderId,
+          success_url: "https://kafezolagambia.com/",
+          error_url: "https://kafezolagambia.com/"
+        })
+      }
+    );
+
+    const waveData = await waveResponse.json();
+
+    if (!waveResponse.ok) {
+      console.error("❌ Wave error:", waveData);
+      return res.sendStatus(500);
+    }
+
+    const paymentUrl = waveData.wave_launch_url;
+
+    // Send SMS to customer
+    await twilioClient.messages.create({
+      body: `Kafe Zola: Pay for order ${orderId}\n${paymentUrl}`,
+      from: process.env.TWILIO_FROM_NUMBER,
+      to: phone
+    });
+
+    console.log("📲 Payment link sent to customer");
+
+    return res.sendStatus(200);
+
+  } catch (err) {
+    console.error("❌ Gloria webhook error", err);
+    return res.sendStatus(500);
+  }
+});
+
 /* ================================
    ROOT
 ================================ */
