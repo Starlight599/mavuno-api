@@ -15,7 +15,7 @@ const pgPool = new Pool({
 pgPool.query(`
 CREATE TABLE IF NOT EXISTS payments (
   id SERIAL PRIMARY KEY,
-  order_id TEXT,
+  order_id TEXT UNIQUE,
   amount NUMERIC,
   status TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -91,18 +91,22 @@ const amount = event.data.amount;
 
 console.log(`✅ PAYMENT CONFIRMED: ${orderId}`);
 
-        await pgPool.query(
+      const insertResult = await pgPool.query(
   `INSERT INTO payments (order_id, amount, status)
-   VALUES ($1, $2, $3)`,
+   VALUES ($1, $2, $3)
+   ON CONFLICT (order_id) DO NOTHING
+   RETURNING id`,
   [orderId, amount, "paid"]
 );
 
-await twilioClient.messages.create({
-  body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}`,
-  from: process.env.TWILIO_FROM_NUMBER,
-  to: process.env.OWNER_PHONE_NUMBER
-});
-      }
+// Only send SMS if this is first insert
+if (insertResult.rowCount > 0) {
+  await twilioClient.messages.create({
+    body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}`,
+    from: process.env.TWILIO_FROM_NUMBER,
+    to: process.env.OWNER_PHONE_NUMBER
+  });
+}
 
       return res.sendStatus(200);
 
