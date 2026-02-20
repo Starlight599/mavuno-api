@@ -246,7 +246,7 @@ app.get("/admin/payments", async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     console.error("❌ Admin PG read error", err);
-    return res.status(500).json({ error: "db_read_failed" });
+    res.status(500).json({ error: "db_read_failed" });
   }
 });
 
