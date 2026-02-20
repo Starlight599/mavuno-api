@@ -58,7 +58,7 @@ app.post(
         return res.sendStatus(401);
       }
 
-      // ✅ Anti-replay: reject if older than 5 minutes
+      // Anti-replay protection
       const now = Math.floor(Date.now() / 1000);
       if (Math.abs(now - Number(timestamp)) > 300) {
         console.error("❌ Wave webhook expired");
@@ -87,26 +87,27 @@ app.post(
         event.data?.payment_status === "succeeded"
       ) {
         const orderId = event.data.client_reference;
-const amount = event.data.amount;
+        const amount = event.data.amount;
 
-console.log(`✅ PAYMENT CONFIRMED: ${orderId}`);
+        console.log(`✅ PAYMENT CONFIRMED: ${orderId}`);
 
-      const insertResult = await pgPool.query(
-  `INSERT INTO payments (order_id, amount, status)
-   VALUES ($1, $2, $3)
-   ON CONFLICT (order_id) DO NOTHING
-   RETURNING id`,
-  [orderId, amount, "paid"]
-);
+        const insertResult = await pgPool.query(
+          `INSERT INTO payments (order_id, amount, status)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (order_id) DO NOTHING
+           RETURNING id`,
+          [orderId, amount, "paid"]
+        );
 
-// Only send SMS if this is first insert
-if (insertResult.rowCount > 0) {
-  await twilioClient.messages.create({
-    body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}`,
-    from: process.env.TWILIO_FROM_NUMBER,
-    to: process.env.OWNER_PHONE_NUMBER
-  });
-}
+        // Only notify on first insert
+        if (insertResult.rowCount > 0) {
+          await twilioClient.messages.create({
+            body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}`,
+            from: process.env.TWILIO_FROM_NUMBER,
+            to: process.env.OWNER_PHONE_NUMBER
+          });
+        }
+      }
 
       return res.sendStatus(200);
 
@@ -116,7 +117,6 @@ if (insertResult.rowCount > 0) {
     }
   }
 );
-
 /* ================================
    JSON MIDDLEWARE
 ================================ */
