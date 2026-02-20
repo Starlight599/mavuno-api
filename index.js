@@ -2,6 +2,23 @@ const express = require("express");
 const crypto = require("crypto");
 const twilio = require("twilio");
 
+const sqlite3 = require("sqlite3").verbose();
+const path = require("path");
+
+const dbPath = path.join(__dirname, "data", "mavuno.db");
+const db = new sqlite3.Database(dbPath);
+
+// create payments table if not exists
+db.run(`
+CREATE TABLE IF NOT EXISTS payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id TEXT,
+  amount REAL,
+  status TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+`);
+
 const app = express();
 const PORT = process.env.PORT || 8080;
 
