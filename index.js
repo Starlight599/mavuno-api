@@ -101,9 +101,10 @@ if (!authorizationHeader || authorizationHeader !== process.env.GLORIA_MASTER_KE
 }
 
     const order = req.body;
+     
+     console.log("📦 FULL GLORIA BODY:", JSON.stringify(req.body, null, 2));
 
-    console.log("📦 Gloria Order Received:", order.order_id);
-    console.log("Order type:", order.order_type);
+console.log("📦 FULL GLORIA BODY:", JSON.stringify(order, null, 2));
 
     const orderId = order.order_id;
     const amount = order.total_price;
