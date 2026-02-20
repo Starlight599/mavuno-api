@@ -82,15 +82,22 @@ app.post(
         event.data?.payment_status === "succeeded"
       ) {
         const orderId = event.data.client_reference;
-        const amount = event.data.amount;
+const amount = event.data.amount;
 
-        console.log(`✅ PAYMENT CONFIRMED: ${orderId}`);
+console.log(`✅ PAYMENT CONFIRMED: ${orderId}`);
 
-        await twilioClient.messages.create({
-          body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}`,
-          from: process.env.TWILIO_FROM_NUMBER,
-          to: process.env.OWNER_PHONE_NUMBER
-        });
+// save payment to SQLite
+db.run(
+  `INSERT INTO payments (order_id, amount, status)
+   VALUES (?, ?, ?)`,
+  [orderId, amount, "paid"]
+);
+
+await twilioClient.messages.create({
+  body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}`,
+  from: process.env.TWILIO_FROM_NUMBER,
+  to: process.env.OWNER_PHONE_NUMBER
+});
       }
 
       return res.sendStatus(200);
@@ -199,6 +206,16 @@ app.get("/", (req, res) => {
   res.send("🚀 Mavuno API is running");
 });
 
+// debug: list stored payments
+app.get("/debug/payments", (req, res) => {
+  db.all("SELECT * FROM payments ORDER BY id DESC", (err, rows) => {
+    if (err) {
+      console.error("❌ DB read error", err);
+      return res.status(500).json({ error: "db_read_failed" });
+    }
+    res.json(rows);
+  });
+});
 /* ================================
    HEALTH CHECK
 ================================ */
