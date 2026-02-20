@@ -2,12 +2,8 @@ const express = require("express");
 const crypto = require("crypto");
 const twilio = require("twilio");
 
-const sqlite3 = require("sqlite3").verbose();
-const path = require("path");
 const { Pool } = require("pg");
 
-const dbPath = path.join(__dirname, "data", "mavuno.db");
-const db = new sqlite3.Database(dbPath);
 const pgPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
@@ -16,16 +12,6 @@ const pgPool = new Pool({
   }
 });
 
-// create payments table if not exists
-db.run(`
-CREATE TABLE IF NOT EXISTS payments (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  order_id TEXT,
-  amount REAL,
-  status TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-`);
 pgPool.query(`
 CREATE TABLE IF NOT EXISTS payments (
   id SERIAL PRIMARY KEY,
@@ -105,17 +91,11 @@ const amount = event.data.amount;
 
 console.log(`✅ PAYMENT CONFIRMED: ${orderId}`);
 
-// save payment to SQLite
-db.run(
-  `INSERT INTO payments (order_id, amount, status)
-   VALUES (?, ?, ?)`,
-  [orderId, amount, "paid"]
-);
-        pgPool.query(
+        await pgPool.query(
   `INSERT INTO payments (order_id, amount, status)
    VALUES ($1, $2, $3)`,
   [orderId, amount, "paid"]
-).catch(err => console.error("❌ PG insert error", err));
+);
 
 await twilioClient.messages.create({
   body: `✅ PAYMENT RECEIVED\nOrder: ${orderId}\nAmount: D${amount}`,
