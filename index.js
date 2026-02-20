@@ -102,9 +102,6 @@ if (!authorizationHeader || authorizationHeader !== process.env.GLORIA_MASTER_KE
 
     const order = req.body;
 
-// 🔎 DEBUG — full Gloria payload
-console.log("📦 FULL GLORIA BODY:", JSON.stringify(order, null, 2));
-
 const orderData = order.orders?.[0];
 
 const orderId = orderData?.id;
@@ -117,23 +114,25 @@ if (!orderId || !amount || !phone) {
 }
 
     // Create Wave checkout
-    const waveResponse = await fetch(
-      "https://api.wave.com/v1/checkout/sessions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.WAVE_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          amount: amount.toString(),
-          currency: "GMD",
-          client_reference: orderId,
-          success_url: "https://kafezolagambia.com/",
-          error_url: "https://kafezolagambia.com/"
-        })
-      }
-    );
+const cleanAmount = parseFloat(amount);
+
+const waveResponse = await fetch(
+  "https://api.wave.com/v1/checkout/sessions",
+  {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.WAVE_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      amount: cleanAmount.toString(),
+      currency: "GMD",
+      client_reference: orderId,
+      success_url: "https://kafezolagambia.com/",
+      error_url: "https://kafezolagambia.com/"
+    })
+  }
+);
 
     const waveData = await waveResponse.json();
 
