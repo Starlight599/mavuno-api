@@ -10,7 +10,9 @@ const dbPath = path.join(__dirname, "data", "mavuno.db");
 const db = new sqlite3.Database(dbPath);
 const pgPool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 // create payments table if not exists
@@ -31,7 +33,9 @@ CREATE TABLE IF NOT EXISTS payments (
   status TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
-`).catch(err => console.error("❌ PG table init error", err));
+`)
+.then(() => console.log("✅ PG connected"))
+.catch(err => console.error("❌ PG table init error", err));
 
 const app = express();
 const PORT = process.env.PORT || 8080;
