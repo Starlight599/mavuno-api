@@ -206,16 +206,6 @@ app.get("/", (req, res) => {
   res.send("🚀 Mavuno API is running");
 });
 
-// debug: list stored payments
-app.get("/debug/payments", (req, res) => {
-  db.all("SELECT * FROM payments ORDER BY id DESC", (err, rows) => {
-    if (err) {
-      console.error("❌ DB read error", err);
-      return res.status(500).json({ error: "db_read_failed" });
-    }
-    res.json(rows);
-  });
-});
 /* ================================
    HEALTH CHECK
 ================================ */
