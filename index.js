@@ -10,7 +10,7 @@ const dbPath = path.join(__dirname, "data", "mavuno.db");
 const db = new sqlite3.Database(dbPath);
 const pgPool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: true
 });
 
 // create payments table if not exists
