@@ -228,24 +228,22 @@ app.get("/", (req, res) => {
 /* ================================
    ADMIN PAYMENTS (SECURE)
 ================================ */
-app.get("/admin/payments", (req, res) => {
+app.get("/admin/payments", async (req, res) => {
   const key = req.query.key;
 
-  // verify admin key
   if (!key || key !== process.env.ADMIN_API_KEY) {
     return res.status(401).json({ error: "unauthorized" });
   }
 
-  db.all(
-    "SELECT * FROM payments ORDER BY id DESC",
-    (err, rows) => {
-      if (err) {
-        console.error("❌ Admin DB read error", err);
-        return res.status(500).json({ error: "db_read_failed" });
-      }
-      res.json(rows);
-    }
-  );
+  try {
+    const result = await pgPool.query(
+      "SELECT * FROM payments ORDER BY id DESC"
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("❌ Admin PG read error", err);
+    return res.status(500).json({ error: "db_read_failed" });
+  }
 });
 
 /* ================================
