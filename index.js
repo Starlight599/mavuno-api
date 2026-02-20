@@ -101,19 +101,20 @@ if (!authorizationHeader || authorizationHeader !== process.env.GLORIA_MASTER_KE
 }
 
     const order = req.body;
-     
-     console.log("📦 FULL GLORIA BODY:", JSON.stringify(req.body, null, 2));
 
+// 🔎 DEBUG — full Gloria payload
 console.log("📦 FULL GLORIA BODY:", JSON.stringify(order, null, 2));
 
-    const orderId = order.order_id;
-    const amount = order.total_price;
-    const phone = order.customer?.phone;
+const orderData = order.orders?.[0];
 
-    if (!orderId || !amount || !phone) {
-      console.error("❌ Missing order data");
-      return res.sendStatus(400);
-    }
+const orderId = orderData?.id;
+const amount = orderData?.total_price;
+const phone = orderData?.client_phone;
+
+if (!orderId || !amount || !phone) {
+  console.error("❌ Missing order data");
+  return res.sendStatus(400);
+}
 
     // Create Wave checkout
     const waveResponse = await fetch(
