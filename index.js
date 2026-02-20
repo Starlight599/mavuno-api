@@ -14,8 +14,7 @@ const twilioClient = twilio(
 );
 
 /* =====================================================
-   WAVE WEBHOOK — EXACT DOC IMPLEMENTATION
-   MUST BE FIRST — NO express.json() BEFORE THIS
+   WAVE WEBHOOK — VERIFIED + TIMESTAMP PROTECTION
 ===================================================== */
 app.post(
   "/webhooks/wave",
@@ -34,6 +33,13 @@ app.post(
 
       if (!timestamp || !receivedSignature) {
         console.error("❌ Invalid Wave-Signature format");
+        return res.sendStatus(401);
+      }
+
+      // ✅ Anti-replay: reject if older than 5 minutes
+      const now = Math.floor(Date.now() / 1000);
+      if (Math.abs(now - Number(timestamp)) > 300) {
+        console.error("❌ Wave webhook expired");
         return res.sendStatus(401);
       }
 
@@ -80,59 +86,69 @@ app.post(
 );
 
 /* ================================
-   JSON MIDDLEWARE (AFTER WEBHOOK)
+   JSON MIDDLEWARE
 ================================ */
 app.use(express.json());
 
 /* =====================================================
-   GLORIAFOOD ACCEPTED ORDER WEBHOOK
+   GLORIA ACCEPTED ORDER — AUTH + SOURCE + VALIDATION
 ===================================================== */
 app.post("/gloria/accepted", async (req, res) => {
   try {
 
-    console.log("🔎 Incoming headers:", req.headers);
-
     const authorizationHeader = req.headers["authorization"];
 
-// ✅ Verify Gloria authentication
-if (!authorizationHeader || authorizationHeader !== process.env.GLORIA_MASTER_KEY) {
-  console.error("❌ Invalid Gloria authentication");
-  return res.sendStatus(401);
-}
+    // ✅ Verify Gloria secret
+    if (!authorizationHeader || authorizationHeader !== process.env.GLORIA_MASTER_KEY) {
+      console.error("❌ Invalid Gloria authentication");
+      return res.sendStatus(401);
+    }
+
+    // ✅ Verify request is from Gloria system
+    const ua = req.headers["user-agent"] || "";
+    if (!ua.includes("GF Accepted Orders")) {
+      console.error("❌ Invalid Gloria source");
+      return res.sendStatus(401);
+    }
 
     const order = req.body;
+    const orderData = order.orders?.[0];
 
-const orderData = order.orders?.[0];
+    const orderId = orderData?.id;
+    const amount = orderData?.total_price;
+    const phone = orderData?.client_phone;
 
-const orderId = orderData?.id;
-const amount = orderData?.total_price;
-const phone = orderData?.client_phone;
+    if (!orderId || !amount || !phone) {
+      console.error("❌ Missing order data");
+      return res.sendStatus(400);
+    }
 
-if (!orderId || !amount || !phone) {
-  console.error("❌ Missing order data");
-  return res.sendStatus(400);
-}
+    // ✅ Phone format validation
+    if (!/^\+?\d{7,15}$/.test(phone)) {
+      console.error("❌ Invalid phone format");
+      return res.sendStatus(400);
+    }
 
     // Create Wave checkout
-const cleanAmount = parseFloat(amount);
+    const cleanAmount = parseFloat(amount);
 
-const waveResponse = await fetch(
-  "https://api.wave.com/v1/checkout/sessions",
-  {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.WAVE_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      amount: cleanAmount.toString(),
-      currency: "GMD",
-      client_reference: orderId,
-      success_url: "https://kafezolagambia.com/",
-      error_url: "https://kafezolagambia.com/"
-    })
-  }
-);
+    const waveResponse = await fetch(
+      "https://api.wave.com/v1/checkout/sessions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.WAVE_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          amount: cleanAmount.toString(),
+          currency: "GMD",
+          client_reference: orderId,
+          success_url: "https://kafezolagambia.com/",
+          error_url: "https://kafezolagambia.com/"
+        })
+      }
+    );
 
     const waveData = await waveResponse.json();
 
@@ -167,62 +183,10 @@ app.get("/", (req, res) => {
 });
 
 /* ================================
-   HEALTH CHECK (REQUIRED FOR DO)
+   HEALTH CHECK
 ================================ */
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" });
-});
-
-/* ================================
-   ORDER ACCEPTED
-================================ */
-app.post("/orders/accepted", async (req, res) => {
-  const { orderId, amount, phone } = req.body;
-
-  if (!orderId || !amount || !phone) {
-    return res.status(400).json({ error: "Missing fields" });
-  }
-
-  try {
-    const waveResponse = await fetch(
-      "https://api.wave.com/v1/checkout/sessions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.WAVE_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          amount: amount.toString(),
-          currency: "GMD",
-          client_reference: orderId,
-          success_url: "https://kafezolagambia.com/",
-          error_url: "https://kafezolagambia.com/"
-        })
-      }
-    );
-
-    const waveData = await waveResponse.json();
-
-    if (!waveResponse.ok) {
-      console.error("❌ Wave error:", waveData);
-      return res.status(500).json({ error: "Wave failed" });
-    }
-
-    const paymentUrl = waveData.wave_launch_url;
-
-    await twilioClient.messages.create({
-      body: `Kafe Zola: Pay for order ${orderId}\n${paymentUrl}`,
-      from: process.env.TWILIO_FROM_NUMBER,
-      to: phone
-    });
-
-    return res.json({ status: "payment_created" });
-
-  } catch (err) {
-    console.error("❌ Order error", err);
-    return res.status(500).json({ error: "Server error" });
-  }
 });
 
 /* ================================
